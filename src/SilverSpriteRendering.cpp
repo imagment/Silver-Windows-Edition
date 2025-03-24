@@ -176,7 +176,7 @@ std::tuple<int, int, int, int> SpriteRenderer::CalculatePivotExpansion() {
         pivot = Vector2(std::round(this->pivotFactor.x * spriteWidth), std::round(this->pivotFactor.y * spriteHeight));
     }
 
-    Vector2 size(spriteWidth, spriteHeight);
+    Vector2 size((double) spriteWidth, (double) spriteHeight);
 
     // Get rotated corner positions
     Vector2 leftUp = RotatePoint(0, 0);
@@ -221,8 +221,8 @@ std::tuple<int, int, int, int> SpriteRenderer::GetPivotBounds() {
 
     
 
-    Vector2 size(spriteWidth, spriteHeight);
-
+    Vector2 size((double)spriteWidth, (double)spriteHeight);
+    
     // Get rotated corner positions
     Vector2 leftUp = RotatePoint(0, 0);
     Vector2 leftDown = RotatePoint(0, size.y - 1);
@@ -234,7 +234,9 @@ std::tuple<int, int, int, int> SpriteRenderer::GetPivotBounds() {
     double rb = std::max({leftUp.x, leftDown.x, rightDown.x, rightUp.x});
     double ub = std::min({leftUp.y, leftDown.y, rightDown.y, rightUp.y});
     double db = std::max({leftUp.y, leftDown.y, rightDown.y, rightUp.y});
-    
+    #ifdef DEVELOPPER_DEBUG_MODE
+      printf("Bounding box: %lf %lf %lf %lf\n",lb, rb, ub, db);
+    #endif
     // Scale bounds
     double l = (pivot.x - lb) * scale.x;
     double r = (rb - pivot.x) * scale.x;
@@ -361,7 +363,7 @@ void SpriteRenderer::setShape(std::string target) {
       spriteHeight++;
       spriteWidth = std::max(spriteWidth, static_cast<int>(line.size()));
   }
-  
+
   ansiExtracted = ExtractAnsi(shape);
 }
 

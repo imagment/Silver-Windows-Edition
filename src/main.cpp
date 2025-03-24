@@ -4,18 +4,13 @@
 #include <thread>
 
 int main() {
-  Actor c1;
-  c1.AddComponent<Camera>();
-
-
-  Actor actor("test", "123\n456");
-  actor.GetComponent<Transform>()->position = Vector3Zero;
-  actor.GetComponent<Transform>()->scale = Vector3(1,1,1);
+  // Use std::shared_ptr for c1 to ensure shared_from_this works
+  SPActor c1 = std::make_shared<Actor>();
+  c1->AddComponent<Camera>();
   
-  actor.AddObject();
-  c1.GetComponent<Camera>()->RenderFrame();
-
+  SPActor test = std::make_shared<Actor>("test", "1");
+  Rectangle(test, Rect(0,0,5,5), 0);
+  c1->GetComponent<Camera>()->RenderFrame();
   Hold();
   return 0;
 }
-

@@ -230,7 +230,7 @@ void Camera::RenderFrame() {
   float cosTheta = cos(radians);
   float sinTheta = sin(radians);
 
-  vector<Actor*> Viewable;
+  vector<std::shared_ptr<Actor>> Viewable;
   double angle = rotation; // Camera's rotation angle in radians
   double cosAngle = std::cos(angle);
   double sinAngle = std::sin(angle);
@@ -340,7 +340,7 @@ void Camera::RenderFrame() {
   if (cameraScale.z < 0)
     flip = -1;
   std::stable_sort(Viewable.begin(), Viewable.end(),
-    [&](const Actor *a, const Actor *b) {
+    [&](const std::shared_ptr<Actor> a, const std::shared_ptr<Actor> b) {
         bool aIsUI = a->GetComponent<UI>() != nullptr;
         bool bIsUI = b->GetComponent<UI>() != nullptr;
 
@@ -407,6 +407,7 @@ void Camera::RenderFrame() {
           std::string stripped = StripAnsi(cellStr);
           if (stripped != " " && stripped!="\0")
             renderBuffer[y][x] = cellStr;
+            
         }
         
       }
@@ -457,7 +458,6 @@ void Camera::RenderFrame() {
   int maxConsoleHeight = consoleHeight;
   int cameraWidth = cameraScale.x;
 
-
   int renderedHeight = cameraScale.y;
   for (int i = 0; i < topTextLines.size(); ++i) {
       int lineOffsetX = offsetX + maxLeftWidth;
@@ -507,9 +507,7 @@ void Camera::RenderFrame() {
     } else {
      line += string(max(0, min((int)cameraScale.x, availableWidth - (int)line.size())), ' ');
 
-
     }
-
     line += rightLine;
 
 

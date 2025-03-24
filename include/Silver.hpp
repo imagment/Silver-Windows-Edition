@@ -32,6 +32,7 @@
 #include <unordered_map>
 #include <variant>
 
+#define SPActor std::shared_ptr<Actor>
 
 #define until(condition)                                                       \
   {                                                                            \
@@ -43,7 +44,7 @@
 
 class Actor; // Forward declaration
 
-using World = std::unordered_map<int, Actor*>;
+using World = std::unordered_map<int, std::shared_ptr<Actor>>;
 
 
 extern Rect StageArea;
@@ -55,46 +56,57 @@ extern bool debugMode;
 
 class Component {
 protected:
-  Actor *parent; // Keeping it lowercase as intended
+  Actor* parent; // Keeping it lowercase as intended
 
 public:
-  explicit Component(Actor *m)
-      : parent(m) {} // Ensure parent is always initialized
+  explicit Component(Actor* parent)
+      : parent(parent) {} // Ensure parent is always initialized
+  // Pure virtual Clone method
+    virtual std::shared_ptr<Component> Clone() const = 0;
   explicit Component(){} 
   virtual ~Component() = default;
 
   virtual void Update(float deltaTime) = 0; // Pure virtual function
 
-  Actor *GetParent() const { return parent; } // Safe accessor
-  void UnsafeSetParent(Actor *target) {
+  Actor* GetParent() const { return parent; } // Safe accessor
+  void UnsafeSetParent(Actor* target) {
     parent = target;
   }
 };
 
 class Transform : public Component {
 public:
-  Vector3 position = Vector3(0.0f, 0.0f, 0.0f);
-  double rotation = 0.0f;
-  Vector3 scale = Vector3(1.0f, 1.0f, 1.0f);
+    Transform() = default;
+    explicit Transform(Actor* parent) : Component(parent) {}
 
-  Transform() = default;
-  explicit Transform(Actor *m) : Component(m) {}
-  void Translate(Vector3 offset);
-  // Provide an implementation for the update method
-  void Update(float deltaTime) override {
-    // Add behavior for updating the Transform (e.g., moving, rotating, etc.)
-  }
+    Transform(const Transform& other) = default;
+    Transform& operator=(const Transform& other) = default;
+
+    std::shared_ptr<Component> Clone() const override {
+        return std::make_shared<Transform>(*this);
+    }
+
+    void Translate(Vector3 offset);
+    void Update(float deltaTime) override {}
+
+    Vector3 position = Vector3(0.0f, 0.0f, 0.0f);
+    double rotation = 0.0f;
+    Vector3 scale = Vector3(1.0f, 1.0f, 1.0f);
 };
+
 
 class SpriteRenderer : public Component {
 public:
-  SpriteRenderer() = default;
+ std::shared_ptr<Component> Clone() const override {
+        return std::make_shared<SpriteRenderer>(*this); // Deep copy
+    }
+
+  SpriteRenderer() {};
   explicit SpriteRenderer(std::string newShape) {
     setShape(newShape);
     cleanShape = newShape;
-    spriteWidth = 0;
-    spriteHeight = 0;
-    useRelativePivot = true;
+
+    useRelativePivot = false;
     pivotFactor = Vector2(0.5f, 0.5f);  // Default pivot factor
   }
 
@@ -103,9 +115,7 @@ public:
     setShape(newShape);
     cleanShape = newShape;
     pivot = newPivot;
-    
-    spriteWidth = 0;
-    spriteHeight = 0;
+
 
   }
 
@@ -116,8 +126,7 @@ public:
     cleanShape = newShape;
     if(!useRelative) pivot = newPivot;
     else pivotFactor = newPivot;  // Default pivot factor
-    spriteWidth = 0;
-    spriteHeight = 0;
+
     
   }
 
@@ -131,16 +140,15 @@ public:
     isTransparent = transparent;
     useMarkdown = markdown;
     spriteColor = newColor;
-    spriteWidth = 0;
-    spriteHeight = 0;
+
     
   }
   
-  explicit SpriteRenderer(Actor *m) : Component(m) {}
+  explicit SpriteRenderer(Actor* parent) : Component(parent) {}
   std::string getShape();
   void setShape(std::string target);
   
-  bool useRelativePivot = true;
+  bool useRelativePivot = false;
   Vector2 pivot = Vector2(0, 0);
   Vector2 pivotFactor = Vector2(0.5, 0.5);
   
@@ -151,6 +159,45 @@ public:
   
   Vector2 GetSize();
   Vector2 GetPivot();
+  
+  SpriteRenderer(const SpriteRenderer& other)
+        : Component(other),
+          shape(other.shape),
+          cleanShape(other.cleanShape),
+          pivot(other.pivot),
+          pivotFactor(other.pivotFactor),
+          useRelativePivot(other.useRelativePivot),
+          isTransparent(other.isTransparent),
+          spriteColor(other.spriteColor),
+          useMarkdown(other.useMarkdown),
+          spriteWidth(other.spriteWidth),
+          spriteHeight(other.spriteHeight),
+          ansiExtracted(other.ansiExtracted) {
+       
+        ss = std::stringstream(other.ss.str());
+    }
+
+    SpriteRenderer& operator=(const SpriteRenderer& other) {
+        if (this != &other) {
+            Component::operator=(other);
+            shape = other.shape;
+            cleanShape = other.cleanShape;
+            pivot = other.pivot;
+            pivotFactor = other.pivotFactor;
+            useRelativePivot = other.useRelativePivot;
+            isTransparent = other.isTransparent;
+            spriteColor = other.spriteColor;
+            useMarkdown = other.useMarkdown;
+            spriteWidth = other.spriteWidth;
+            spriteHeight = other.spriteHeight;
+            ansiExtracted = other.ansiExtracted;
+
+            ss.str("");
+            ss.clear();
+            ss << other.ss.str();
+        }
+        return *this;
+    }
   
   std::tuple<int, int, int, int> GetPivotBounds();
   std::string GetCellString(int column, int line);
@@ -171,38 +218,41 @@ private:
 std::string StripAnsi(const std::string& input) ;
 std::vector<std::vector<std::string>> ExtractAnsi(const std::string& input);
 
-class Actor {
+
+class Actor : public std::enable_shared_from_this<Actor>  {
 public:
   std::string name;
+  
+  Actor(const Actor& other);
 
-  template <typename T, typename... Args>
-T *AddComponent(Args &&...args) {
-    static_assert(std::is_base_of<Component, T>::value,
-                  "T must inherit from Component");
+
+ template <typename T, typename... Args>
+T* AddComponent(Args&&... args) {
+    static_assert(std::is_base_of<Component, T>::value, "T must inherit from Component");
+
     if (this == nullptr) {
-        std::cerr << "Error: Attempting to add component to a null Actor."
-                  << std::endl;
+        std::cerr << "Error: Attempting to add component to a null Actor." << std::endl;
         return nullptr;
     }
 
-    // Check if a component of type T already exists
-    for (const auto &comp : objectComponents) {
+    for (const auto& comp : objectComponents) {
         if (std::dynamic_pointer_cast<T>(comp)) {
-            std::cerr << "Error: Component of type " << typeid(T).name()
-                      << " already exists." << std::endl;
+            std::cerr << "Error: Component of type " << typeid(T).name() << " already exists." << std::endl;
             return nullptr;
         }
     }
 
-    // Create and store the component
-    T *component = new T(this, std::forward<Args>(args)...);
 
-    // Call UnsafeSetParent before storing
+    // Now safe to create the component
+    std::shared_ptr<T> component = std::make_shared<T>(this, std::forward<Args>(args)...);
+
+    // Perform any additional operations (like setting parent) if needed
     component->UnsafeSetParent(this);
 
-    objectComponents.push_back(std::shared_ptr<T>(component));
+    // Add component to objectComponents
+    objectComponents.push_back(component);
 
-    return component;
+    return component.get(); // Return raw pointer to the component
 }
 
 
@@ -268,7 +318,9 @@ T *AddComponent(std::shared_ptr<T> component) {
     return nullptr;
   }
 
-  Actor() { AddComponent<Transform>(); }
+  Actor() { 
+    AddComponent<Transform>();
+  }
 
   // Constructor that takes only a Actor name
   Actor(std::string ActorName) : name(ActorName) {
@@ -283,18 +335,7 @@ T *AddComponent(std::shared_ptr<T> component) {
     spriteRenderer->setShape(shape);      // Set the shape from the parameter
   }
   
-  // Constructor that takes both a Actor name and a shape
-  Actor(std::string ActorName, std::string shape, Vector3 position) : name(ActorName) {
-    AddComponent<Transform>(); // Add Transform component
-    SpriteRenderer *spriteRenderer =
-        AddComponent<SpriteRenderer>(); // Add SpriteRenderer component
-    spriteRenderer->setShape(shape);         // Set the shape from the parameter
-  }
 
-  // Constructor that takes both a Actor name and a shape
-  Actor(std::string ActorName, Vector3 position) : name(ActorName) {
-    AddComponent<Transform>(); // Add Transform component
-  }
    Actor(std::string ActorName, std::vector<std::shared_ptr<Component>> components) : name(ActorName) {
         // Add default Transform component
         AddComponent<Transform>();
@@ -307,19 +348,21 @@ T *AddComponent(std::shared_ptr<T> component) {
 
 
   // Set parent Actor
-  void SetParent(Actor *parentActor) {
-    parent = parentActor;
-    parent-> AddChild(this);
+  void SetParent(std::shared_ptr<Actor> parentActor) {
+     if (parentActor) {
+            parent = parentActor;
+            parent->AddChild(shared_from_this()); // Pass shared_ptr
+        }
   }
 
   // Add a child Actor
-  void AddChild(Actor *childActor) { children.push_back(childActor); }
+  void AddChild(std::shared_ptr<Actor> childActor) { children.push_back(childActor); }
 
   // Get the parent Actor
-  Actor *GetParent() const { return parent; }
+  std::shared_ptr<Actor> GetParent() const { return parent; }
 
   // Get the child Actores
-  const std::vector<Actor *> &GetChildren() const { return children; }
+  const std::vector<std::shared_ptr<Actor> > &GetChildren() const { return children; }
 
   unsigned int number = 0;
   std::map<std::string, int> intValues;
@@ -329,6 +372,8 @@ T *AddComponent(std::shared_ptr<T> component) {
   // Other member functions
 
   void AddObject();
+  void PlaceObject();
+  void PlaceObjectAt(Vector3 location);
   void RemoveObject();
   
   int GetInstanceID() {
@@ -337,12 +382,13 @@ T *AddComponent(std::shared_ptr<T> component) {
 private:
   int objectID;
   std::vector<std::shared_ptr<Component>> objectComponents;    // Components of this Actor
-  Actor *parent = nullptr; // Parent Actor
-  std::vector<Actor *> children;
+  std::shared_ptr<Actor> parent = nullptr; // Parent Actor
+  std::vector<std::shared_ptr<Actor> > children;
 };
 
 class Animation {
 public:
+
   std::vector<std::string> animation;
   void LoadAnimationFromFile(const std::string filename);
   double fps;
@@ -352,12 +398,30 @@ public:
 
 class AnimationManager : public Component {
 public:
+AnimationManager() = default;
+    AnimationManager(Animation* anim) : playing(anim), nextUp(nullptr), currentFrame(0) {}
+    AnimationManager(const AnimationManager& other) { *this = other; }
+    
+    AnimationManager& operator=(const AnimationManager& other) {
+        if (this != &other) {
+            playing = other.playing;
+            nextUp = other.nextUp;
+            currentFrame = other.currentFrame;
+        }
+        return *this;
+    }
+
+    std::shared_ptr<Component> Clone() const override {
+        return std::make_shared<AnimationManager>(*this); // Deep copy
+    }
+    
+
   void SwitchAnimation(Animation* anim);
   void StopAnimation();
   void PauseAnimation();
   void ResumeAnimation();
   
-  void Update();
+  void Update(float deltaTime);
 private:
   Animation* playing = nullptr;
   Animation* nextUp = nullptr;
@@ -366,9 +430,19 @@ private:
 
 #include "SilverCamera.hpp"
 
+/*
 class Fluid : public Component {
 public:
-  bool isFluid = false;
+ std::shared_ptr<Component> Clone() const override {
+        return std::make_shared<Fluid>(*this); // Deep copy
+    }
+  Fluid(bool isFluid, double diffusionSpeed, int maximumDistance, bool preventFlowing,
+          int fluidDepth, int fluidRoot, int fluidParent, double drySpeed, bool isDead)
+        : isFluid(isFluid), diffusionSpeed(diffusionSpeed), maximumDistance(maximumDistance),
+          preventFlowing(preventFlowing), fluidDepth(fluidDepth), fluidRoot(fluidRoot),
+          fluidParent(fluidParent), drySpeed(drySpeed), isDead(isDead) {}
+
+    Fluid(const Fluid& other) { *this = other; }
   double diffusionSpeed = 1.0;
   int maximumDistance = 5;
   bool preventFlowing = false;
@@ -385,92 +459,71 @@ private:
   void globalCullingThread(int rootID);
   void ThreadedFlow(int rootID);
 };
+*/
 
 class UI : public Component {
-  
-  void Update() {}
+public:
+    UI() = default;  // Default constructor
+
+    UI(const UI& other) { *this = other; }  // Copy constructor
+
+    UI& operator=(const UI& other) {
+        if (this != &other) {
+            // Copy state from `other` (if there are any members, copy them here)
+        }
+        return *this;
+    }
+
+    std::shared_ptr<Component> Clone() const override {
+        return std::make_shared<UI>(*this); // Deep copy
+    }
+  void Update(float deltaTime) {}
 };
 
 std::vector<int> Duplicate(const std::variant<int, std::vector<int>> &IDs);
 void SetNonBlockingMode();
-Actor *InstanceIDToActor(int objID);
+std::shared_ptr<Actor> InstanceIDToActor(int objID);
 
-void glideObjectPositionToTarget(
-    const std::variant<int, std::vector<int>> objectIDs, int spriteID,
-    float speed);
-void setObjectPositionToTarget(
-    const std::variant<int, std::vector<int>> objectIDs, int spriteID);
-void sprayRectangle(int spawns, Vector3 center, Vector3 scale, std::string name,
-                    int number);
-void sprayOval(int spawns, Vector3 center, Vector3 scale, std::string name,
-               int number);
-void spray(int spawns, Vector3 center, int range, std::string name, int number);
+
 bool IsAlive(int obj);
-void sprayLine(int spawns, Vector3 start, Vector3 end, std::string name,
-               int number);
 
 void SetCursorVisibility(bool value);
 
-void setObjectRandom(const std::variant<int, std::vector<int>> objectID,
-                     const std::pair<int, int> &xRange,
-                     const std::pair<int, int> &yRange);
-void Rectangle(const std::string name, int number, Vector3 topLeft, int width,
-               int height);
-
-void RectangleHollow(const std::string name, int number, Vector3 topLeft,
-                     int width, int height);
-
-void CircleHollow(const std::string name, int number, Vector3 center,
-                  int radius);
-void Circle(const std::string name, int number, Vector3 center, int radius);
 void Debug(const char *fmt, ...);
-void Line(const std::string name, int number, Vector3 start, Vector3 end);
 
+void Rectangle(SPActor object, const Rect &rect, double layer);
+void RectangleHollow(SPActor object, const Rect &rect, double layer);
+void Circle(SPActor object, const Vector3 &center, int radius);
+void CircleHollow(SPActor object, const Vector3 &center, int radius);
+void Line(SPActor object, const Vector3 &start, const Vector3 &end);
 void Oval(const std::string name, int number, Vector3 center, Vector3 scale);
+void OvalHollow(SPActor object, const Vector3 &center, const Vector3 &scale);
+
+void SprayRectangle(SPActor object, int spawns, const Rect &rect, double layer);
+void SprayOval(SPActor object, int spawns, const Vector3 &center, const Vector3 &scale);
+void Spray(SPActor object, int spawns, const Vector3 &center, int range);
+void SprayLine(SPActor object, int spawns, const Vector3 &start, const Vector3 &end);
+void SprayCircle(SPActor object, int spawns, const Vector3 &center, float radius);
+
 int GetRandom(int min, int max);
-void OvalHollow(const std::string name, int number, Vector3 center,
-                Vector3 scale);
-void setObjectX(const std::variant<int, std::vector<int>> objectID,
-                Vector3 pos);
-void setObjectY(const std::variant<int, std::vector<int>> objectID,
-                Vector3 pos);
-void setObjectXY(const std::variant<int, std::vector<int>> objectID,
-                 Vector2 pos);
+
 void applyFunction(const std::vector<int> &ids, std::function<void(int)> func,
                    char mode, ...);
-void glideObjectRandom(const std::variant<int, std::vector<int>> &ids,
-                       const std::pair<int, int> &xRange,
-                       const std::pair<int, int> &yRange, float speed);
-void moveObjectPosition(const std::variant<int, std::vector<int>> objectID,
-                        Vector2 pos);
-void glideObjectXY(const std::variant<int, std::vector<int>> &ids,
-                   Vector2 offset, float speed, ...);
 
-std::vector<Vector3> getRectanglePoints(Vector3 topLeft, int width, int height);
-std::vector<Vector3> getRectangleHollowPoints(Vector3 topLeft, int width,
-                                              int height);
 
-std::vector<Vector3> getLinePoints(Vector3 start, Vector3 end);
-std::vector<Vector3> getOvalPoints(Vector3 center, Vector3 scale);
-std::vector<Vector3> getOvalHollowPoints(Vector3 center, Vector3 scale);
 
-void glideObjectX(const std::variant<int, std::vector<int>> &ids, int x_offset,
-                  long long speed, ...);
-void glideObjectY(const std::variant<int, std::vector<int>> &ids, int y_offset,
-                  long long speed, ...);
+          
 
-std::vector<Actor*> FindObjectsWithTag(const std::string tag);
-Actor* FindObjectWithTag(const std::string tag);
+std::vector<std::shared_ptr<Actor>> FindObjectsWithTag(const std::string tag);
+std::shared_ptr<Actor> FindObjectWithTag(const std::string tag);
 
 void SetRawMode(bool value);
 
 Vector2 GetConsoleSize();
 Vector2 GetConsoleCenter();
-void walk(const std::string name, std::variant<std::vector<int>, int> number,
-          int steps, int direction);
 
 void SetConsoleTitle(const std::string title);
-void Destroy(Actor* actor);
+void Destroy(std::shared_ptr<Actor> actor);
 bool Gotoxy(int x, int y);
 double DeltaTime();
 void Clear();

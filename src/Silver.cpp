@@ -47,7 +47,23 @@ Rect StageArea = Rect(-50, -50, 100, 100);
 
 int nextObjectID = 0;
 
-Actor* InstanceIDToActor(int objID) {
+Actor::Actor(const Actor& other)
+    : name(other.name), objectID(nextObjectID++), intValues(other.intValues),
+      stringValues(other.stringValues), tag(other.tag) {
+
+    for (const auto& component : other.objectComponents) {
+        objectComponents.push_back(component->Clone());
+    }
+   
+    for (const auto& child : other.children) {
+        auto newChild = std::make_shared<Actor>(*child);
+        newChild->SetParent(shared_from_this());
+        children.push_back(newChild);
+    }
+}
+
+
+std::shared_ptr<Actor> InstanceIDToActor(int objID) {
   if(Workspace.find(objID) != Workspace.end()) return Workspace[objID];
   return nullptr;
 }
@@ -85,7 +101,7 @@ void SetCursorVisibility(bool value) {
   fflush(stdout);
 }
 
-void Destroy(Actor* actor) {
+void Destroy(std::shared_ptr<Actor> actor) {
   actor->RemoveObject();
 }
 
@@ -103,42 +119,47 @@ bool Gotoxy(int x, int y) {
   cout << "\033[" << y + 1 << ";" << x + 1 << "H" << flush;
   return true;
 }
-/*
-void Rectangle(Actor &object, Vector3 topLeft, int width, int height) {
-  for (int i = 0; i < width; ++i) {
-    for (int j = 0; j < height; ++j) {
-      Vector3 pos = {topLeft.x + i, topLeft.y + j, topLeft.z};
-      object.addObject();
+
+// Function to create a filled rectangle
+void Rectangle(SPActor object, const Rect &rect, double layer) {
+    for (int i = 0; i < rect.width; ++i) {
+        for (int j = 0; j < rect.height; ++j) {
+            Vector3 pos = Vector3(rect.x + i, rect.y + j, layer); // Placing at the specified layer
+            object->PlaceObjectAt(pos);
+        }
     }
-  }
-}
-void RectangleHollow(Actor &object, const Vector3 &topLeft, int width,
-                     int height) {
-  for (int i = 0; i < width; ++i) {
-    object.addObjectAt({topLeft.x + i, topLeft.y, topLeft.z});
-    object.addObjectAt({topLeft.x + i, topLeft.y + height - 1, topLeft.z});
-  }
-
-  for (int j = 1; j < height - 1; ++j) {
-    object.addObjectAt({topLeft.x, topLeft.y + j, topLeft.z});
-    object.addObjectAt({topLeft.x + width - 1, topLeft.y + j, topLeft.z});
-  }
 }
 
-void Circle(Actor &object, const Vector3 &center, int radius) {
+// Function to create a hollow rectangle
+void RectangleHollow(SPActor object, const Rect &rect, double layer) {
+    // Place objects along the top and bottom edges
+    for (int i = 0; i < rect.width; ++i) {
+        object->PlaceObjectAt({rect.x + i, rect.y, layer});  // Placing at the specified layer
+        object->PlaceObjectAt({rect.x + i, rect.y + rect.height - 1, layer});
+    }
+
+    // Place objects along the left and right edges (excluding corners already placed)
+    for (int j = 1; j < rect.height - 1; ++j) {
+        object->PlaceObjectAt({rect.x, rect.y + j, layer});  // Placing at the specified layer
+        object->PlaceObjectAt({rect.x + rect.width - 1, rect.y + j, layer});
+    }
+}
+
+
+void Circle(SPActor object, const Vector3 &center, int radius) {
   for (int y = center.y - radius; y <= center.y + radius; ++y) {
     for (int x = center.x - radius; x <= center.x + radius; ++x) {
       int dx = x - center.x;
       int dy = y - center.y;
 
       if (dx * dx + dy * dy <= radius * radius) {
-        object.addObjectAt({(double)x, (double)y, center.z});
+        object->PlaceObjectAt({(double)x, (double)y, center.z});
       }
     }
   }
 }
 
-void Line(Actor &object, const Vector3 &start, const Vector3 &end) {
+void Line(SPActor object, const Vector3 &start, const Vector3 &end) {
   int x1 = start.x, y1 = start.y;
   int x2 = end.x, y2 = end.y;
 
@@ -149,7 +170,7 @@ void Line(Actor &object, const Vector3 &start, const Vector3 &end) {
   int err = dx - dy;
 
   while (true) {
-    object.addObjectAt({(double)x1, (double)y1, start.z});
+    object->PlaceObjectAt({(double)x1, (double)y1, start.z});
     if (x1 == x2 && y1 == y2)
       break;
 
@@ -165,7 +186,7 @@ void Line(Actor &object, const Vector3 &start, const Vector3 &end) {
   }
 }
 
-void Oval(Actor &object, const Vector3 &center, const Vector3 &scale) {
+void Oval(SPActor object, const Vector3 &center, const Vector3 &scale) {
   for (int y = center.y - scale.y; y <= center.y + scale.y; ++y) {
     for (int x = center.x - scale.x; x <= center.x + scale.x; ++x) {
       int dx = x - center.x;
@@ -173,13 +194,13 @@ void Oval(Actor &object, const Vector3 &center, const Vector3 &scale) {
 
       if ((dx * dx) * (scale.y * scale.y) + (dy * dy) * (scale.x * scale.x) <=
           (scale.x * scale.x * scale.y * scale.y)) {
-        object.addObjectAt({(double)x, (double)y, center.z});
+        object->PlaceObjectAt({(double)x, (double)y, center.z});
       }
     }
   }
 }
 
-void OvalHollow(Actor &object, const Vector3 &center, const Vector3 &scale) {
+void OvalHollow(SPActor object, const Vector3 &center, const Vector3 &scale) {
   for (int y = center.y - scale.y; y <= center.y + scale.y; ++y) {
     for (int x = center.x - scale.x; x <= center.x + scale.x; ++x) {
       int dx = x - center.x;
@@ -194,13 +215,13 @@ void OvalHollow(Actor &object, const Vector3 &center, const Vector3 &scale) {
                   (dy * dy) * (innerScale.x * innerScale.x);
 
       if (inside <= outer && inner > outer) {
-        object.addObjectAt({(double)x, (double)y, center.z});
+        object->PlaceObjectAt({(double)x, (double)y, center.z});
       }
     }
   }
 }
 
-void CircleHollow(Actor &object, const Vector3 &center, int radius) {
+void CircleHollow(SPActor object, const Vector3 &center, int radius) {
   for (int y = center.y - radius; y <= center.y + radius; ++y) {
     for (int x = center.x - radius; x <= center.x + radius; ++x) {
       int dx = x - center.x;
@@ -209,71 +230,100 @@ void CircleHollow(Actor &object, const Vector3 &center, int radius) {
 
       if (distanceSquared >= (radius - 1) * (radius - 1) &&
           distanceSquared <= radius * radius) {
-        object.addObjectAt({(double)x, (double)y, center.z});
+        object->PlaceObjectAt({(double)x, (double)y, center.z});
       }
     }
   }
 }
 
-void sprayRectangle(Actor &object, int spawns, const Vector3 &center,
-                    const Vector3 &scale) {
-  srand(static_cast<unsigned>(time(nullptr)));
+// Function to create a filled rectangle of objects
+void SprayRectangle(SPActor object, int spawns, const Rect &rect, double layer) {
+    srand(static_cast<unsigned>(time(nullptr)));
 
-  for (int i = 0; i < spawns; ++i) {
-    int offsetX = rand() % static_cast<int>(scale.x);
-    int offsetY = rand() % static_cast<int>(scale.y);
+    for (int i = 0; i < spawns; ++i) {
+        int offsetX = rand() % (int)rect.width;
+        int offsetY = rand() % (int)rect.height;
 
-    Vector3 position = {center.x + offsetX, center.y + offsetY, center.z};
-    object.addObjectAt(position);
-  }
+        Vector3 position = {rect.x + offsetX, rect.y + offsetY, layer};
+        object->PlaceObjectAt(position);
+    }
 }
 
-void sprayOval(Actor &object, int spawns, const Vector3 &center,
-               const Vector3 &scale) {
-  srand(static_cast<unsigned>(time(nullptr)));
+// Function to create a spray of objects in a circular pattern
+void SprayCircle(SPActor object, int spawns, const Vector3 &center, float radius) {
+    srand(static_cast<unsigned>(time(nullptr)));
 
-  for (int i = 0; i < spawns; ++i) {
-    double angle = static_cast<double>(rand()) / RAND_MAX * 2 * M_PI;
-    double distanceX = (static_cast<double>(rand()) / RAND_MAX) * scale.x;
-    double distanceY = (static_cast<double>(rand()) / RAND_MAX) * scale.y;
+    for (int i = 0; i < spawns; ++i) {
+        // Random angle in radians (from 0 to 2π)
+        double angle = static_cast<double>(rand()) / RAND_MAX * 2 * M_PI;
 
-    Vector3 position = {center.x + static_cast<int>(distanceX * cos(angle)),
-                        center.y + static_cast<int>(distanceY * sin(angle)),
-                        center.z};
-    object.addObjectAt(position);
-  }
+        // Random radius from the center (up to the specified radius)
+        double distance = static_cast<double>(rand()) / RAND_MAX * radius;
+
+        // Calculate the new x and y positions using polar coordinates
+        Vector3 position = {
+            center.x + static_cast<int>(distance * cos(angle)),
+            center.y + static_cast<int>(distance * sin(angle)),
+            center.z
+        };
+
+        object->PlaceObjectAt(position);
+    }
 }
 
-void spray(Actor &object, int spawns, const Vector3 &center, int range) {
-  srand(static_cast<unsigned>(time(nullptr)));
+// Function to create an oval-shaped spray of objects
+void SprayOval(SPActor object, int spawns, const Vector3 &center, const Vector3 &scale) {
+    srand(static_cast<unsigned>(time(nullptr)));
 
-  for (int i = 0; i < spawns; ++i) {
-    int offsetX = rand() % (2 * range + 1) - range;
-    int offsetY = rand() % (2 * range + 1) - range;
+    for (int i = 0; i < spawns; ++i) {
+        double angle = static_cast<double>(rand()) / RAND_MAX * 2 * M_PI;
+        double distanceX = (static_cast<double>(rand()) / RAND_MAX) * scale.x;
+        double distanceY = (static_cast<double>(rand()) / RAND_MAX) * scale.y;
 
-    Vector3 position = {center.x + offsetX, center.y + offsetY, center.z};
-    object.addObjectAt(position);
-  }
+        Vector3 position = {
+            center.x + static_cast<int>(distanceX * cos(angle)),
+            center.y + static_cast<int>(distanceY * sin(angle)),
+            center.z
+        };
+        object->PlaceObjectAt(position);
+    }
 }
 
-void sprayLine(Actor &object, int spawns, const Vector3 &start,
-               const Vector3 &end) {
-  srand(static_cast<unsigned>(time(nullptr)));
+// Function to create a spray of objects within a specified range
+void Spray(SPActor object, int spawns, const Vector3 &center, int range) {
+    srand(static_cast<unsigned>(time(nullptr)));
 
-  int dx = end.x - start.x;
-  int dy = end.y - start.y;
-  int dz = end.z - start.z;
+    for (int i = 0; i < spawns; ++i) {
+        int offsetX = rand() % (2 * range + 1) - range;
+        int offsetY = rand() % (2 * range + 1) - range;
 
-  for (int i = 0; i < spawns; ++i) {
-    double t = static_cast<double>(rand()) / RAND_MAX;
-
-    Vector3 position =
-        (static_cast<int>(start.x + t * dx), static_cast<int>(start.y + t * dy),
-         static_cast<int>(start.z + t * dz));
-    object.addObjectAt(position);
-  }
+        Vector3 position = {center.x + offsetX, center.y + offsetY, center.z};
+        object->PlaceObjectAt(position);
+    }
 }
-*/
+
+// Function to create a spray of objects along a line
+void SprayLine(SPActor object, int spawns, const Vector3 &start, const Vector3 &end) {
+    srand(static_cast<unsigned>(time(nullptr)));
+
+    int dx = end.x - start.x;
+    int dy = end.y - start.y;
+    int dz = end.z - start.z;
+
+    for (int i = 0; i < spawns; ++i) {
+        double t = static_cast<double>(rand()) / RAND_MAX;
+
+        Vector3 position = {
+            (start.x + t * dx),
+            (start.y + t * dy),
+            (start.z + t * dz)
+        };
+        object->PlaceObjectAt(position);
+    }
+}
+
+
+
 void Debug(const char *fmt, ...) {
   if (!debugMode) {
     return;
@@ -420,24 +470,67 @@ Vector2 GetConsoleCenter() {
 void Transform::Translate(Vector3 offset) { position += offset; }
 
 void Actor::AddObject() {
-  Actor* target = this;
+    // Add the current object to the Workspace
+    objectID = nextObjectID;
+    Workspace[nextObjectID] = std::make_shared<Actor>(*this); // Deep copy
+    nextObjectID++;
 
-  objectID = nextObjectID;
-  Workspace[nextObjectID] = target;
-  nextObjectID++;
-  return;
+    return;
 }
 
+void Actor::PlaceObject() {
+    // Create a new actor by copying the current one (deep copy)
+    auto actorCopy = std::make_shared<Actor>(*this);
+
+    // Set the object ID for the new actor
+    actorCopy->objectID = nextObjectID;
+
+    // Add the new actor to the Workspace
+    Workspace[nextObjectID] = actorCopy;
+
+    // Increment the nextObjectID for the next object
+    nextObjectID++;
+
+    return;
+}
+
+void Actor::PlaceObjectAt(Vector3 location) {
+    // Create a new actor by copying the current one
+    auto actorCopy = std::make_shared<Actor>(*this);
+
+    // Ensure components are cloned properly
+    actorCopy->objectComponents.clear();  // Remove shallow copies
+
+    for (const auto& comp : objectComponents) {
+        auto clonedComponent = comp->Clone();
+        clonedComponent->UnsafeSetParent(actorCopy.get());
+        actorCopy->objectComponents.push_back(clonedComponent);
+    }
+
+    // Update the new actor's transform position
+    auto transform = actorCopy->GetComponent<Transform>();
+    if (transform) {
+        transform->position = location;
+    }
+
+    // Assign a new unique object ID
+    actorCopy->objectID = nextObjectID++;
+
+    // Store the duplicate in the workspace
+    Workspace[actorCopy->objectID] = actorCopy;
+}
+
+
 void Actor::RemoveObject() {
-  Actor* target = this;
+  std::shared_ptr<Actor> target = shared_from_this();
   
   // Find the object ID to remove
   int id = objectID;
 
   // Remove the object from the Workspace
   auto it = std::find_if(Workspace.begin(), Workspace.end(),
-    [&target](const std::pair<const int, Actor*>& p) {
-        return p.second == target;  // Compare the Actor* part of the pair
+    [&target](const std::pair<const int, std::shared_ptr<Actor>>& p) {
+        return p.second == target;  // Compare the std::shared_ptr<Actor> part of the pair
     });
 
   if (it != Workspace.end()) {
@@ -457,296 +550,6 @@ void Wait(int time) {
   this_thread::sleep_for(chrono::milliseconds(static_cast<int>(time)));
 }
 
-/*
-void setObjectXY(const variant<int, vector<int>> objectID, Vector2 pos) {
-  int x = pos.x;
-  int y = pos.y;
-
-  vector<int> idsToUpdate;
-
-  if (holds_alternative<int>(objectID)) {
-    int singleID = get<int>(objectID);
-    if (singleID == all_numbers) {
-      for (auto &entry : Workspace) {
-        idsToUpdate.push_back(entry.first);
-      }
-    } else {
-      idsToUpdate.push_back(singleID);
-    }
-  } else {
-    const vector<int> &ids = get<vector<int>>(objectID);
-    idsToUpdate.insert(idsToUpdate.end(), ids.begin(), ids.end());
-  }
-
-  for (int id : idsToUpdate) {
-    auto it = Workspace.find(id);
-    if (it != Workspace.end()) {
-      Actor &X = it->second;
-      int z = X.GetComponent<Transform>()->position.z;
-
-      X.GetComponent<Transform>()->position = (x, y, z);
-    }
-  }
-}
-void setObjectY(const variant<int, vector<int>> objectID, Vector3 pos) {
-  int y = pos.y;
-
-  vector<int> idsToUpdate;
-
-  if (holds_alternative<int>(objectID)) {
-    int singleID = get<int>(objectID);
-    if (singleID == all_numbers) {
-      for (auto &entry : Workspace) {
-        idsToUpdate.push_back(entry.first);
-      }
-    } else {
-      idsToUpdate.push_back(singleID);
-    }
-  } else {
-    const vector<int> &ids = get<vector<int>>(objectID);
-    idsToUpdate.insert(idsToUpdate.end(), ids.begin(), ids.end());
-  }
-
-  for (int id : idsToUpdate) {
-    auto it = Workspace.find(id);
-    if (it != Workspace.end()) {
-      Actor &X = it->second;
-      int z = X.GetComponent<Transform>()->position.z;
-      int x = X.GetComponent<Transform>()->position.x;
-      X.GetComponent<Transform>()->position = (x, y, z);
-    }
-  }
-}
-void setObjectX(const variant<int, vector<int>> objectID, Vector3 pos) {
-  int x = pos.x;
-
-  vector<int> idsToUpdate;
-
-  if (holds_alternative<int>(objectID)) {
-    int singleID = get<int>(objectID);
-    if (singleID == all_numbers) {
-      for (auto &entry : Workspace) {
-        idsToUpdate.push_back(entry.first);
-      }
-    } else {
-      idsToUpdate.push_back(singleID);
-    }
-  } else {
-    const vector<int> &ids = get<vector<int>>(objectID);
-    idsToUpdate.insert(idsToUpdate.end(), ids.begin(), ids.end());
-  }
-
-  for (int id : idsToUpdate) {
-    auto it = Workspace.find(id);
-    if (it != Workspace.end()) {
-      Actor &X = it->second;
-      int y = X.GetComponent<Transform>()->position.y;
-      int z = X.GetComponent<Transform>()->position.z;
-
-      X.GetComponent<Transform>()->position = (x, y, z);
-    }
-  }
-}
-
-void setObjectRandom(const variant<int, vector<int>> objectID,
-                     const pair<int, int> &xRange,
-                     const pair<int, int> &yRange) {
-  vector<int> idsToUpdate;
-
-  if (holds_alternative<int>(objectID)) {
-    int singleID = get<int>(objectID);
-    if (singleID == all_numbers) {
-      for (auto &entry : Workspace) {
-        idsToUpdate.push_back(entry.first);
-      }
-    } else {
-      idsToUpdate.push_back(singleID);
-    }
-  } else {
-    const vector<int> &ids = get<vector<int>>(objectID);
-    idsToUpdate.insert(idsToUpdate.end(), ids.begin(), ids.end());
-  }
-
-  for (int id : idsToUpdate) {
-    auto it = Workspace.find(id);
-    if (it != Workspace.end()) {
-      Actor &X = it->second;
-      int z = X.GetComponent<Transform>()->position.z;
-
-      int x = (xRange.first == xRange.second)
-                  ? xRange.first
-                  : getRandom(xRange.first, xRange.second);
-      int y = (yRange.first == yRange.second)
-                  ? yRange.first
-                  : getRandom(yRange.first, yRange.second);
-
-      X.GetComponent<Transform>()->position = (x, y, z);
-    }
-  }
-}
-
-void setObjectPositionToTarget(const variant<int, vector<int>> objectIDs,
-                               int spriteID) {
-
-  Vector3 targetPos =
-      getMeshValue(spriteID).GetComponent<Transform>()->position;
-
-  vector<int> idsToUpdate;
-  if (holds_alternative<int>(objectIDs)) {
-    int singleID = get<int>(objectIDs);
-
-    idsToUpdate.push_back(singleID);
-
-  } else {
-    const vector<int> &idList = get<vector<int>>(objectIDs);
-    for (int id : idList) {
-
-      idsToUpdate.push_back(id);
-    }
-  }
-
-  for (int id : idsToUpdate) {
-    auto it = Workspace.find(id);
-    if (it != Workspace.end()) {
-      Actor &objMesh = it->second;
-      objMesh.GetComponent<Transform>()->position = targetPos;
-    }
-  }
-}
-void glideObjectPositionToTarget(const variant<int, vector<int>> objectIDs,
-                                 int spriteID, float speed) {
-
-  Vector3 targetPos =
-      getMeshValue(spriteID).GetComponent<Transform>()->position;
-
-  int maxSteps = 0;
-  vector<tuple<int, int, int>> idsToUpdate;
-
-  if (holds_alternative<int>(objectIDs)) {
-    int singleID = get<int>(objectIDs);
-
-    Vector3 currentPos =
-        getMeshValue(singleID).GetComponent<Transform>()->position;
-    int x_steps = abs(targetPos.x - currentPos.x);
-    int y_steps = abs(targetPos.y - currentPos.y);
-    maxSteps = max({maxSteps, x_steps, y_steps});
-
-    idsToUpdate.emplace_back(singleID, x_steps, y_steps);
-  } else {
-    const vector<int> &idList = get<vector<int>>(objectIDs);
-
-    for (int id : idList) {
-      Vector3 currentPos = getMeshValue(id).GetComponent<Transform>()->position;
-      int x_steps = abs(targetPos.x - currentPos.x);
-      int y_steps = abs(targetPos.y - currentPos.y);
-      maxSteps = max({maxSteps, x_steps, y_steps});
-
-      idsToUpdate.emplace_back(id, x_steps, y_steps);
-    }
-  }
-
-  if (maxSteps == 0) {
-    return;
-  }
-
-  float stepDuration = speed / maxSteps;
-
-  for (int i = 0; i < maxSteps; ++i) {
-    wait(stepDuration);
-
-    for (const auto &[id, x_steps, y_steps] : idsToUpdate) {
-      Vector3 currentPos = getMeshValue(id).GetComponent<Transform>()->position;
-
-      if (i < x_steps && (i % (maxSteps / max(1, x_steps)) == 0)) {
-        int dirX = (targetPos.x > currentPos.x) ? 1 : -1;
-        moveObjectX(id, dirX);
-      }
-
-      if (i < y_steps && (i % (maxSteps / max(1, y_steps)) == 0)) {
-        int dirY = (targetPos.y > currentPos.y) ? 1 : -1;
-        moveObjectY(id, dirY);
-      }
-    }
-  }
-}
-
-void glideObjectXY(const variant<int, vector<int>> &ids, Vector2 offset,
-                   float speed, ...) {
-  va_list args;
-  va_start(args, speed);
-
-  bool setPosition = false;
-
-  if (args != nullptr) {
-
-    if (va_arg(args, int) == true) {
-      setPosition = true;
-    }
-  }
-
-  va_end(args);
-  int maxSteps = 0;
-  vector<pair<int, int>> idsToUpdateX;
-  vector<pair<int, int>> idsToUpdateY;
-
-  if (holds_alternative<int>(ids)) {
-    int singleId = get<int>(ids);
-
-    Vector3 current_pos =
-        getMeshValue(singleId).GetComponent<Transform>()->position;
-
-    int targetX = setPosition ? current_pos.x + offset.x : offset.x;
-    int targetY = setPosition ? current_pos.y + offset.y : offset.y;
-
-    int stepsX = abs(targetX - current_pos.x);
-    int stepsY = abs(targetY - current_pos.y);
-    maxSteps = max({maxSteps, stepsX, stepsY});
-
-    idsToUpdateX.emplace_back(singleId, stepsX);
-    idsToUpdateY.emplace_back(singleId, stepsY);
-  } else {
-    const vector<int> &idList = get<vector<int>>(ids);
-    for (const auto &id : idList) {
-
-      Vector3 current_pos =
-          getMeshValue(id).GetComponent<Transform>()->position;
-
-      int targetX = setPosition ? current_pos.x + offset.x : offset.x;
-      int targetY = setPosition ? current_pos.y + offset.y : offset.y;
-
-      int stepsX = abs(targetX - current_pos.x);
-      int stepsY = abs(targetY - current_pos.y);
-      maxSteps = max({maxSteps, stepsX, stepsY});
-
-      idsToUpdateX.emplace_back(id, stepsX);
-      idsToUpdateY.emplace_back(id, stepsY);
-    }
-  }
-
-  float stepDuration = speed / maxSteps;
-
-  for (int i = 0; i < maxSteps; ++i) {
-    wait(stepDuration);
-
-    for (const auto &[id, stepsX] : idsToUpdateX) {
-      if (i < stepsX && (i % (maxSteps / stepsX) == 0)) {
-        int dirX = (offset.x > 0) ? 1 : -1;
-        moveObjectX(id, dirX);
-      }
-    }
-
-    for (const auto &[id, stepsY] : idsToUpdateY) {
-      if (i < stepsY && (i % (maxSteps / stepsY) == 0)) {
-        int dirY = (offset.y > 0) ? 1 : -1;
-        moveObjectY(id, dirY);
-      }
-    }
-  }
-}
-*/
-
-void glideObjectXY(const variant<int, vector<int>> &ids, Vector2 offset,
-                   float speed, ...) {}
 int GetRandom(int min, int max) {
   static mt19937 rng(random_device{}() ^
                      chrono::system_clock::now().time_since_epoch().count());
@@ -754,299 +557,6 @@ int GetRandom(int min, int max) {
   return dist(rng);
 }
 
-/*
-void setObjectPosition(const variant<int, vector<int>> objectID, Vector3 pos) {
-  int x = pos.x;
-  int y = pos.y;
-  int z = pos.z;
-
-  vector<int> idsToUpdate;
-
-  if (holds_alternative<int>(objectID)) {
-    int singleID = get<int>(objectID);
-
-    idsToUpdate.push_back(singleID);
-  } else {
-    const vector<int> &ids = get<vector<int>>(objectID);
-    idsToUpdate.insert(idsToUpdate.end(), ids.begin(), ids.end());
-  }
-
-  for (int id : idsToUpdate) {
-    auto it = Workspace.find(id);
-    if (it != Workspace.end()) {
-      Actor &X = it->second;
-      X.GetComponent<Transform>()->position = (x, y, z);
-    }
-  }
-}
-
-void moveObjectXY(const variant<int, vector<int>> objectID, Vector2 pos) {
-  int dx = pos.x;
-  int dy = pos.y;
-
-  vector<int> idsToUpdate;
-
-  if (holds_alternative<int>(objectID)) {
-    int singleID = get<int>(objectID);
-
-    idsToUpdate.push_back(singleID);
-  } else {
-    const vector<int> &ids = get<vector<int>>(objectID);
-    idsToUpdate.insert(idsToUpdate.end(), ids.begin(), ids.end());
-  }
-
-  for (int id : idsToUpdate) {
-    auto it = Workspace.find(id);
-    if (it != Workspace.end()) {
-      Actor &X = it->second;
-      X.GetComponent<Transform>()->position += Vector3(dx, dy, 0);
-      int x = X.GetComponent<Transform>()->position.x;
-      int y = X.GetComponent<Transform>()->position.y;
-      int z = X.GetComponent<Transform>()->position.z;
-    }
-  }
-}
-
-void moveObjectPosition(const variant<int, vector<int>> objectID, Vector2 pos) {
-  int dx = pos.x;
-  int dy = pos.y;
-
-  vector<int> idsToUpdate;
-
-  if (holds_alternative<int>(objectID)) {
-    int singleID = get<int>(objectID);
-
-    idsToUpdate.push_back(singleID);
-  } else {
-    const vector<int> &ids = get<vector<int>>(objectID);
-    idsToUpdate.insert(idsToUpdate.end(), ids.begin(), ids.end());
-  }
-
-  for (int id : idsToUpdate) {
-    auto it = Workspace.find(id);
-    if (it != Workspace.end()) {
-      Actor &X = it->second;
-      X.GetComponent<Transform>()->position += Vector2(dx, dy);
-      int x = X.GetComponent<Transform>()->position.x;
-      int y = X.GetComponent<Transform>()->position.y;
-      int z = X.GetComponent<Transform>()->position.z;
-    }
-  }
-}
-
-void moveObjectX(const variant<int, vector<int>> objectID, int x_offset) {
-  int dx = x_offset;
-  vector<int> idsToUpdate;
-
-  if (holds_alternative<int>(objectID)) {
-    int singleID = get<int>(objectID);
-
-    idsToUpdate.push_back(singleID);
-  } else {
-    const vector<int> &ids = get<vector<int>>(objectID);
-    idsToUpdate.insert(idsToUpdate.end(), ids.begin(), ids.end());
-  }
-
-  for (int id : idsToUpdate) {
-    auto it = Workspace.find(id);
-    if (it != Workspace.end()) {
-      Actor &X = it->second;
-      X.GetComponent<Transform>()->position += Vector3(dx, 0, 0);
-      int x = X.GetComponent<Transform>()->position.x;
-      int y = X.GetComponent<Transform>()->position.y;
-      int z = X.GetComponent<Transform>()->position.z;
-    }
-  }
-}
-
-void moveObjectY(const variant<int, vector<int>> objectID, int y_offset) {
-  int dy = y_offset;
-  vector<int> idsToUpdate;
-
-  if (holds_alternative<int>(objectID)) {
-    int singleID = get<int>(objectID);
-
-    idsToUpdate.push_back(singleID);
-  } else {
-    const vector<int> &ids = get<vector<int>>(objectID);
-    idsToUpdate.insert(idsToUpdate.end(), ids.begin(), ids.end());
-  }
-
-  for (int id : idsToUpdate) {
-    auto it = Workspace.find(id);
-    if (it != Workspace.end()) {
-      Actor &X = it->second;
-      X.GetComponent<Transform>()->position += Vector3(0, dy, 0);
-      int x = X.GetComponent<Transform>()->position.x;
-      int y = X.GetComponent<Transform>()->position.y;
-      int z = X.GetComponent<Transform>()->position.z;
-    }
-  }
-}
-
-void glideObject(const variant<int, vector<int>> &ids, int offset,
-                 bool isYMovement, long long speed, bool setPosition) {
-  vector<pair<int, int>> idsToUpdate;
-  int maxSteps = 0;
-
-  // Determine if we're working with a single ID or a list of IDs
-  if (holds_alternative<int>(ids)) {
-    int singleId = get<int>(ids);
-    Vector3 current_pos =
-        getMeshValue(singleId).GetComponent<Transform>()->position;
-    int targetPos = setPosition ? offset
-                                : (isYMovement ? current_pos.y + offset
-                                               : current_pos.x + offset);
-    int steps = abs(targetPos - (isYMovement ? current_pos.y : current_pos.x));
-    maxSteps = std::max(maxSteps, steps);
-    idsToUpdate.emplace_back(singleId, steps);
-  } else {
-    const vector<int> &idList = get<vector<int>>(ids);
-    for (const auto &id : idList) {
-      Vector3 current_pos =
-          getMeshValue(id).GetComponent<Transform>()->position;
-      int targetPos = setPosition ? offset
-                                  : (isYMovement ? current_pos.y + offset
-                                                 : current_pos.x + offset);
-      int steps =
-          abs(targetPos - (isYMovement ? current_pos.y : current_pos.x));
-      maxSteps = std::max(maxSteps, steps);
-      idsToUpdate.emplace_back(id, steps);
-    }
-  }
-
-  // Calculate the step duration based on the FPS and total steps
-
-  // Use a lambda function for each thread to move an object
-  auto moveObjectThread = [&](int id, int steps) {
-    for (int i = 0; i < steps; ++i) {
-      // Use std::chrono for waiting between each step
-      int stepDuration = speed / steps;
-
-      std::this_thread::sleep_for(std::chrono::milliseconds(stepDuration));
-
-      if (isYMovement) {
-        int dir = (offset > 0) ? 1 : -1;
-        moveObjectY(id, dir);
-      } else {
-        int dir = (offset > 0) ? 1 : -1;
-        moveObjectX(id, dir);
-      }
-    }
-  };
-
-  // Create and start a thread for each object
-  vector<std::thread> threads;
-  for (const auto &[id, steps] : idsToUpdate) {
-    threads.push_back(std::thread(moveObjectThread, id, steps));
-  }
-
-  // Wait for all threads to finish
-  for (auto &t : threads) {
-    t.join();
-  }
-}
-
-// Wrapper for glideObjectY
-void glideObjectY(const variant<int, vector<int>> &ids, int y_offset,
-                  long long speed, ...) {
-  va_list args;
-  va_start(args, speed);
-  bool setPosition = false;
-
-  if (args != nullptr) {
-    if (va_arg(args, int) == true) {
-      setPosition = true;
-    }
-  }
-  va_end(args);
-
-  glideObject(ids, y_offset, true, speed, setPosition);
-}
-
-// Wrapper for glideObjectX
-void glideObjectX(const variant<int, vector<int>> &ids, int x_offset,
-                  long long speed, ...) {
-  va_list args;
-  va_start(args, speed);
-  bool setPosition = false;
-
-  if (args != nullptr) {
-    if (va_arg(args, int) == true) {
-      setPosition = true;
-    }
-  }
-  va_end(args);
-
-  glideObject(ids, x_offset, false, speed, setPosition);
-}
-
-void glideObjectRandom(const variant<int, vector<int>> &ids,
-                       const pair<int, int> &xRange,
-                       const pair<int, int> &yRange, float speed) {
-  int maxSteps = 0;
-  vector<tuple<int, int, int, Vector3>> idsToUpdate;
-
-  auto getRandom = [](int min, int max) {
-    static mt19937 rng(random_device{}());
-    uniform_int_distribution<int> dist(min, max);
-    return dist(rng);
-  };
-
-  if (holds_alternative<int>(ids)) {
-    int singleId = get<int>(ids);
-
-    Vector3 current_pos =
-        getMeshValue(singleId).GetComponent<Transform>()->position;
-    int targetX = getRandom(xRange.first, xRange.second);
-    int targetY = getRandom(yRange.first, yRange.second);
-
-    int x_steps = abs(targetX - current_pos.x);
-    int y_steps = abs(targetY - current_pos.y);
-    maxSteps = max({maxSteps, x_steps, y_steps});
-
-    idsToUpdate.emplace_back(singleId, x_steps, y_steps,
-                             Vector3(targetX, targetY, (int)current_pos.z));
-  } else {
-    const vector<int> &idList = get<vector<int>>(ids);
-    for (const auto &id : idList) {
-
-      Vector3 current_pos =
-          getMeshValue(id).GetComponent<Transform>()->position;
-      int targetX = getRandom(xRange.first, xRange.second);
-      int targetY = getRandom(yRange.first, yRange.second);
-
-      int x_steps = abs(targetX - current_pos.x);
-      int y_steps = abs(targetY - current_pos.y);
-      maxSteps = max({maxSteps, x_steps, y_steps});
-
-      idsToUpdate.emplace_back(id, x_steps, y_steps,
-                               Vector3(targetX, targetY, (int)current_pos.z));
-    }
-  }
-
-  float stepDuration = speed / maxSteps;
-
-  for (int i = 0; i < maxSteps; ++i) {
-    wait(stepDuration);
-
-    for (const auto &[id, x_steps, y_steps, target_pos] : idsToUpdate) {
-      Vector3 current_pos =
-          getMeshValue(id).GetComponent<Transform>()->position;
-
-      if (i < x_steps && (i % (maxSteps / x_steps) == 0)) {
-        int dirX = (target_pos.x > current_pos.x) ? 1 : -1;
-        moveObjectX(id, dirX);
-      }
-
-      if (i < y_steps && (i % (maxSteps / y_steps) == 0)) {
-        int dirY = (target_pos.y > current_pos.y) ? 1 : -1;
-        moveObjectY(id, dirY);
-      }
-    }
-  }
-}
-*/
 
 void setRawMode(bool value) {
   struct termios termiosConfig;
@@ -1238,8 +748,8 @@ void ApplyFunction(const std::vector<int> &ids, std::function<void(int)> func,
 }
 
 
-vector<Actor*> FindObjectsWithTag(const string tag) {
-  vector<Actor*> actors;
+vector<std::shared_ptr<Actor>> FindObjectsWithTag(const string tag) {
+  vector<std::shared_ptr<Actor>> actors;
   for(auto [key, entry] : Workspace) {
     if(entry->tag == tag) actors.push_back(entry);
   }
@@ -1247,7 +757,7 @@ vector<Actor*> FindObjectsWithTag(const string tag) {
   return actors;
 }
 
-Actor* FindObjectWithTag(const string tag) {
+std::shared_ptr<Actor> FindObjectWithTag(const string tag) {
   for(auto [key, entry] : Workspace) {
     if(entry->tag == tag) return entry;
   }
