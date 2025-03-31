@@ -41,7 +41,7 @@ For users on **Linux**, please use the [Silver Cplusplus repository](https://git
 - 🛠 **Easy-to-Use API** – Intuitive functions for game logic, and essential components like transform, camera and sprite rendering. 
 - ⚡ **Multithreading Support** – Boost performance by running tasks concurrently. 
 - 🔢 **Math Module** – Built-in utilities for Vectors and Rects
-- 📝 **Code Style** – Written in C++17 using CamelCase and PascalCase notation for clarity and consistency.
+- 📝 **Code Style** – Written in C++14 using CamelCase and PascalCase notation for clarity and consistency.
 
 ## Examples
 ```
