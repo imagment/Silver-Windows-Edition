@@ -1,11 +1,8 @@
 #ifndef SILVER_THREADING_HPP
 #define SILVER_THREADING_HPP
 
-#include <thread>
+#include <windows.h>
 #include <queue>
-#include <mutex>
-#include <condition_variable>
-#include <atomic>
 #include <functional>
 
 class SThread {
@@ -21,16 +18,19 @@ public:
     void JoinThread();
     void DetachThread();
 
-    std::queue<std::function<void()>> taskQueue;
-
 private:
     void ThreadFunction();
+    static DWORD WINAPI ThreadWrapper(LPVOID lpParam);
 
-    std::thread workerThread;
-    std::mutex queueMutex;
-    std::condition_variable cv;
-    std::atomic<bool> isPaused;
-    std::atomic<bool> isRunning;
+    HANDLE hThread;
+    HANDLE hQueueEvent;  // Signals when tasks are available
+    HANDLE hPauseEvent;  // Signals when thread should pause/resume
+    HANDLE hStopEvent;   // Signals when thread should stop
+    CRITICAL_SECTION queueCS;
+    
+    std::queue<std::function<void()>> taskQueue;
+    bool isPaused;
+    bool isRunning;
 };
 
-#endif // STHREAD_HPP
+#endif // SILVER_THREADING_HPP

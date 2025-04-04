@@ -3,7 +3,6 @@
 
 // Project-specific headers
 #include "SilverColor.hpp"
-#include "SilverFluid.hpp"
 #include "SilverKeyboard.hpp"
 #include "SilverMusic.hpp"
 #include "SilverThreading.hpp"
@@ -11,8 +10,6 @@
 #include "SilverVMouse.hpp"
 #include "smath.hpp"
 
-// Third-party libraries
-#include "miniaudio.h"
 
 // Standard library headers
 #include <algorithm>
@@ -29,8 +26,8 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include  <type_traits>
 #include <unordered_map>
-#include <variant>
 
 #define SPActor std::shared_ptr<Actor>
 
@@ -281,7 +278,7 @@ T *AddComponent(std::shared_ptr<T> component) {
                   "T must inherit from Component");
 
     // Prevent removal of Transform component
-    if constexpr (std::is_same_v<T, Transform>) {
+    if (std::is_same<T, Transform>::value) {
       return false; // Transform cannot be removed
     }
 
@@ -431,7 +428,6 @@ public:
   void Update(float deltaTime) {}
 };
 
-std::vector<int> Duplicate(const std::variant<int, std::vector<int>> &IDs);
 void SetNonBlockingMode();
 std::shared_ptr<Actor> InstanceIDToActor(int objID);
 

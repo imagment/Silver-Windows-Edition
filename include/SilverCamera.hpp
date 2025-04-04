@@ -1,5 +1,6 @@
 #include "Silver.hpp"
 
+#include <atomic>
 
 class Camera : public Component {
 public:
@@ -104,13 +105,13 @@ public:
   double rotation;
   
   
-  std::mutex bufferMutex;
+  CRITICAL_SECTION bufferMutex;
 
   bool hideMouse = true;
   std::map<std::tuple<int, int>, std::string> lastFrame;
   std::atomic<bool> isRunningCam{false};
  
-  std::mutex camMutex;
+  CRITICAL_SECTION camMutex;
   
   void RenderFrame();
   void StartVideo();

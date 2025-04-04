@@ -1,7 +1,9 @@
 #include "smath.hpp"
 #include <cmath>
 
-
+double clamp(double value, double min, double max) {
+  return fmax(min, fmin(value, max));
+}
 // Reterns the length (magnitude) of the vector
 double Vector3::Magnitude() const { return sqrtf(x * x + y * y + z * z); }
 
@@ -187,7 +189,7 @@ Vector2 MoveTowards(const Vector2 &v, const Vector2 &target, double maxDistance)
 }
 
 Vector2 Vector2::Clamp(const Vector2 &min, const Vector2 &max) {
-    return {std::clamp(x, min.x, max.x), std::clamp(y, min.y, max.y)};
+    return {clamp(x, min.x, max.x), clamp(y, min.y, max.y)};
 }
 
 Vector2 Vector2::Refract(const Vector2 &n, double r) {
