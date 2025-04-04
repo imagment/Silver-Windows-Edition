@@ -5,7 +5,6 @@
 #include <cstdlib>
 #include <iostream>
 #include <map>
-#include <mutex>
 #include <regex>
 #include <set>
 #include <sstream>
@@ -13,30 +12,16 @@
 #include <tuple>
 #include <vector>
 
+#include <windows.h>
+
+
 #include "Silver.hpp"
 
-
-  
-  // Public methods
-  void AddCamera(Camera *camera);
-  void StartVideoProcessing();
-  void StopVideoProcessing();
-
-  // Accessors for active cameras
-  const std::vector<Camera *> GetActiveCameras();
-  void SetActiveCameras(const std::vector<Camera *> &cameras);
-
-
-  // Member variables
-  std::vector<Camera *> activeCameras;
-
-  std::vector<std::vector<float>> hierarchyBuffer;
-  std::vector<std::vector<std::string>> renderBuffer;
-
-  int consoleWidth;
-  int consoleHeight;
-
-
+// Member variables
+std::vector<Camera *> activeCameras;
+std::atomic<bool> isRunning{false};
+std::vector<std::vector<std::string>> renderBuffer;
+HANDLE videoThread;
 
 double FPS = 10;
 
@@ -226,7 +211,7 @@ void Camera::RenderFrame() {
   int worldRangeMinY = StageArea.y;
   int worldRangeMaxY = StageArea.y + StageArea.height - 1;
 
-  float radians = rotation * (M_PI / 180.0);
+  float radians = rotation * (PI / 180.0);
   float cosTheta = cos(radians);
   float sinTheta = sin(radians);
 
@@ -549,6 +534,24 @@ void Camera::RenderFrame() {
   }
 }
 
+void CleanupAndExit() {
+  for (size_t i = 0; i < activeCameras.size(); i++) {
+      if (activeCameras[i]) {
+          activeCameras[i]->StopVideo();
+      }
+  }
+
+  Clear();
+
+  if (isRunning.load()) {
+      isRunning.store(false);
+      WaitForSingleObject(videoThread, INFINITE);
+      CloseHandle(videoThread);
+  }
+
+  ExitProcess(0);
+}
+
 void Camera::ShakeCameraOnce(float intensity) {
   float offsetX =
       intensity * ((rand() % 100 / 100) * (rand() % 2 == 0 ? 1 : -1));
@@ -578,60 +581,41 @@ void Camera::ShakeCamera(float intensity, int shakes,
   position.y = originalY;
 }
 
-// Camera method implementations
-void Camera::StartVideo() {
+DWORD WINAPI VideoThreadFunction(LPVOID lpParam) {
+  while (isRunning) {
+      auto startTime = GetTickCount(); // Get the start time in milliseconds
 
-  if (!isRunningCam) {
-    isRunningCam = true;
-
-    // Register the camera with the CameraManager, passing the hierarchy
-    AddCamera(this);
-  }
-}
-
-void Camera::StopVideo() {
-  auto consoleSize = GetConsoleSize();
-  int consoleWidth = consoleSize.x;
-  int consoleHeight = consoleSize.y;
-  
-  Vector3 cameraScale = scale;
-  Vector3 cameraDisplayPosition = displayPosition;
-  
-  if(useRelativeTransform) {
-    cameraScale.x = consoleWidth * cameraRect.width;
-    cameraScale.y = consoleHeight * cameraRect.height;
-    cameraDisplayPosition.x = consoleWidth * cameraRect.x;
-    cameraDisplayPosition.y = consoleHeight * cameraRect.y;
-  }
-
-  
-  
-  std::lock_guard<std::mutex> lock(camMutex);
-  if (isRunningCam) {
-    isRunningCam = false;
-
-    
-    // Find the camera in the activeCameras list and get the associated
-    // CameraRegion
-    auto it = std::find_if(
-        activeCameras.begin(), activeCameras.end(),
-        [this](const Camera* camera) {
-          return camera == this; // Compare the Camera pointer
-        });
-
-    if (it != activeCameras.end()) {
-      // Extract the CameraRegion associated with this camera
-      // Clean the camera region on the console
-      for (int y = cameraDisplayPosition.y - cameraScale.y / 2; y < cameraDisplayPosition.y + cameraScale.y - cameraScale.y / 2; y++) {
-        Gotoxy(cameraDisplayPosition.x - cameraScale.x / 2, y);
-        for (int x = cameraDisplayPosition.x - cameraScale.x / 2; x < cameraDisplayPosition.x + cameraScale.x - cameraScale.x / 2; x++) {
-          std::cout << " " << std::flush; // Output blank spaces to clean up the area
-        }
+      // Process cameras
+      if (activeCameras.empty()) {
+          break; // Stop the loop if there are no active cameras
       }
 
-      // Remove the camera from the activeCameras list in CameraManager
-      activeCameras.erase(it);
-    }
+      for (auto camera : activeCameras) {
+          if (camera && camera->isRunningCam) {
+              camera->RenderFrame();
+          }
+      }
+
+      // Sleep to maintain FPS
+      DWORD frameTime = GetTickCount() - startTime;
+      DWORD delay = (1000 / FPS) > frameTime ? (1000 / FPS) - frameTime : 0;
+      Sleep(delay);
+  }
+  return 0;
+}
+
+void StartVideoProcessing() {
+  if (isRunning) {
+      return; // Already running
+  }
+
+  isRunning = true;
+
+  // Create the video processing thread using Windows API
+  videoThread = CreateThread(NULL, 0, VideoThreadFunction, NULL, 0, NULL);
+
+  if (videoThread == NULL) {
+      isRunning = false; // Rollback if thread creation fails
   }
 }
 
@@ -660,170 +644,135 @@ void AddCamera(Camera *camera) {
   StartVideoProcessing();
 }
 
+// Camera method implementations
+void Camera::StartVideo() {
 
-std::mutex CameraCoutMutex; // For synchronized console output
-bool isRunning = false;
-std::thread videoThread; // To hold the video thread
+  if (!isRunningCam) {
+    isRunningCam = true;
 
-void CleanupAndExit() {
-  
-  {
-    // Stop all cameras and clear the active cameras
-    for (auto camera : activeCameras) {
-      if (camera) {
-        camera->StopVideo();
-      }
-    }
-    activeCameras.clear();
-    Clear();
-  }
-
-  // If the video thread is running, join it before exiting
-  if (videoThread.joinable()) {
-    videoThread.join(); // Wait for the video thread to finish
-  }
-
-  std::exit(0); // Ensure normal program exit
-}
-
-// Signal handler for SIGINT
-void SignalHandler(int signum) { CleanupAndExit(); }
-void StartVideoProcessing() {
-  if (isRunning) {
-    return; // If already running, do nothing
-  }
-
-  // Register signal handler for SIGINT
-  atexit(CleanupAndExit);
-  std::signal(SIGINT, SignalHandler);
-  isRunning = true;
-
-  // Launch the video processing thread
-  videoThread = std::thread([]() {
-    auto lastFrameTime = std::chrono::steady_clock::now();
-    
-    while (isRunning) {
-      auto now = std::chrono::steady_clock::now();
-      std::chrono::duration<float> elapsed = now - lastFrameTime;
-      
-      if (elapsed.count() >= 1.0f / FPS) {
-        // Process cameras
-        {
-          if (activeCameras.empty()) {
-            break; // Stop the loop if there are no active cameras
-          }
-
-          for (auto camera : activeCameras) {
-            if (camera && camera->isRunningCam) {
-              camera->RenderFrame();
-            }
-          }
-        }
-        
-        lastFrameTime = now; // Update the last frame time
-      }
-      
-      std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(1000 / FPS))); // Allow thread to yield to other processes
-
-    }
-  });
-
-  // Detach the thread (run independently)
-  if (videoThread.joinable()) {
-    videoThread.detach();
+    // Register the camera with the CameraManager, passing the hierarchy
+    AddCamera(this);
   }
 }
 
-
-Vector3 Camera::getScale() {
-  return scale;
-}
-
-Rect Camera::getCameraZone() {
+void Camera::StopVideo() {
   auto consoleSize = GetConsoleSize();
   int consoleWidth = consoleSize.x;
   int consoleHeight = consoleSize.y;
-  
+
   Vector3 cameraScale = scale;
   Vector3 cameraDisplayPosition = displayPosition;
-  
-  if(useRelativeTransform) {
-    cameraScale.x = consoleWidth * cameraRect.width;
-    cameraScale.y = consoleHeight * cameraRect.height;
-    cameraDisplayPosition.x = (consoleWidth + 1) * cameraRect.x;
-    cameraDisplayPosition.y = (consoleHeight + 1) * cameraRect.y;
+
+  if (useRelativeTransform) {
+      cameraScale.x = consoleWidth * cameraRect.width;
+      cameraScale.y = consoleHeight * cameraRect.height;
+      cameraDisplayPosition.x = consoleWidth * cameraRect.x;
+      cameraDisplayPosition.y = consoleHeight * cameraRect.y;
   }
 
+  // No mutex, directly modifying isRunningCam
+  if (isRunningCam) {
+      isRunningCam = false;
 
-  vector<std::string> leftTextLines, rightTextLines;
-  int leftTextLinesCount = 0, rightTextLinesCount = 0;
+      auto it = std::find_if(
+          activeCameras.begin(), activeCameras.end(),
+          [this](const Camera* camera) { return camera == this; });
 
-  if (!Camera::rightText.empty()) {
-    stringstream ss(Camera::rightText);
-    std::string line;
-    while (getline(ss, line)) {
-      rightTextLines.push_back(line);
-      rightTextLinesCount++;
+      if (it != activeCameras.end()) {
+          HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+          COORD pos;
+
+          // Clean the camera region on the console
+          for (int y = cameraDisplayPosition.y - cameraScale.y / 2;
+               y < cameraDisplayPosition.y + cameraScale.y - cameraScale.y / 2;
+               y++) {
+              pos.Y = y;
+              pos.X = cameraDisplayPosition.x - cameraScale.x / 2;
+              SetConsoleCursorPosition(hConsole, pos);
+              
+              for (int x = cameraDisplayPosition.x - cameraScale.x / 2;
+                   x < cameraDisplayPosition.x + cameraScale.x - cameraScale.x / 2;
+                   x++) {
+                  std::cout << " " << std::flush;
+              }
+          }
+
+          // Remove the camera from activeCameras list
+          activeCameras.erase(it);
+      }
+  }
+}
+
+
+BOOL WINAPI SignalHandler(DWORD signal) {
+    if (signal == CTRL_C_EVENT) {
+        CleanupAndExit();
     }
-  }
-  if (!Camera::leftText.empty()) {
-    stringstream ss(Camera::leftText);
-    std::string line;
-    while (getline(ss, line)) {
-      leftTextLines.push_back(line);
-      leftTextLinesCount++;
-    }
-  }
-  int topTextLinesCount = 0;
-  int bottomTextLinesCount = 0;
+    return TRUE;
+}
 
-  vector<std::string> topTextLines;
-  vector<std::string> bottomTextLines;
-  
-  if (!Camera::topText.empty()) {
-    stringstream ss(Camera::topText);
-    std::string line;
-    while (getline(ss, line)) {
-      topTextLines.push_back(line);
-      ++topTextLinesCount;
-    }
-  }
+DWORD WINAPI VideoProcessingLoop(LPVOID arg) {
+    LARGE_INTEGER frequency, lastFrameTime, now;
+    QueryPerformanceFrequency(&frequency);
+    QueryPerformanceCounter(&lastFrameTime);
 
-  if (!Camera::bottomText.empty()) {
-    stringstream ss(Camera::bottomText);
-    std::string line;
-    while (getline(ss, line)) {
-      bottomTextLines.push_back(line);
-      ++bottomTextLinesCount;
+    while (isRunning.load()) {
+        QueryPerformanceCounter(&now);
+        double elapsed = (now.QuadPart - lastFrameTime.QuadPart) / (double)frequency.QuadPart;
+        
+        if (elapsed >= 1.0 / FPS) {
+            if (activeCameras.size() == 0) {
+                break;
+            }
+
+            for (size_t i = 0; i < activeCameras.size(); i++) {
+                if (activeCameras[i] && activeCameras[i]->isRunningCam) {
+                    activeCameras[i]->RenderFrame();
+                }
+            }
+
+            lastFrameTime = now;
+        }
+        Sleep(1000 / FPS);
     }
-  }
-  int maxLeftWidth = 0, maxRightWidth = 0;
-  for (const auto &line : leftTextLines) {
-    maxLeftWidth = std::max(maxLeftWidth, static_cast<int>(line.size()));
-  }
-  for (const auto &line : rightTextLines) {
-    maxRightWidth = std::max(maxRightWidth, static_cast<int>(line.size()));
-  }
-  
-  if (consoleWidth > maxLeftWidth + maxRightWidth + cameraScale.x) cameraScale -= maxLeftWidth + maxRightWidth;
-  if (consoleHeight > topTextLinesCount + bottomTextLinesCount + cameraScale.y) cameraScale -= topTextLinesCount + bottomTextLinesCount;
-  
- 
-  return Rect(cameraDisplayPosition.x, cameraDisplayPosition.y, cameraScale.x, cameraScale.y);
+    return 0;
+}
+
+
+
+Vector3 Camera::getScale() {
+    return scale;
+}
+
+Rect Camera::getCameraZone() {
+    auto consoleSize = GetConsoleSize();
+    int consoleWidth = consoleSize.x;
+    int consoleHeight = consoleSize.y;
+    
+    Vector3 cameraScale = scale;
+    Vector3 cameraDisplayPosition = displayPosition;
+    
+    if (useRelativeTransform) {
+        cameraScale.x = consoleWidth * cameraRect.width;
+        cameraScale.y = consoleHeight * cameraRect.height;
+        cameraDisplayPosition.x = (consoleWidth + 1) * cameraRect.x;
+        cameraDisplayPosition.y = (consoleHeight + 1) * cameraRect.y;
+    }
+    
+    return Rect(cameraDisplayPosition.x, cameraDisplayPosition.y, cameraScale.x, cameraScale.y);
 }
 
 void Camera::EraseCamera() {
-  Rect cameraRegion = getCameraZone();
-
-  for (int j = 0; j < cameraRegion.height; j++) {
-    if (Gotoxy(cameraRegion.x, j + cameraRegion.y)) {
-      std::string clearLine(cameraRegion.width, ' ');
-      std::cout << clearLine << std::flush;
-    } 
-  }
+    Rect cameraRegion = getCameraZone();
+    for (int j = 0; j < cameraRegion.height; j++) {
+        if (Gotoxy(cameraRegion.x, j + cameraRegion.y)) {
+            std::string clearLine(cameraRegion.width, ' ');
+            std::cout << clearLine << std::flush;
+        }
+    }
 }
 
 void Camera::setScale(Vector3 scale) {
-  EraseCamera();
-  this->scale=scale;
+    EraseCamera();
+    this->scale = scale;
 }

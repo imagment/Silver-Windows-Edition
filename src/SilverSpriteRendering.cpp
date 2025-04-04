@@ -100,7 +100,7 @@ Vector2 SpriteRenderer::GetSize() {
     double scaledWidth = width * scale.x;
     double scaledHeight = height * scale.y;
 
-    double radians = rotation * M_PI / 180.0f;
+    double radians = rotation * PI / 180.0f;
     double cosTheta = std::cos(radians);
     double sinTheta = std::sin(radians);
 
@@ -151,7 +151,7 @@ Vector2 SpriteRenderer::RotatePoint(int column, int line) {
   int localY = line - pivot.y;
 
   // Apply clockwise rotation (negative angle for clockwise rotation)
-  double radians = rotation * (M_PI / 180.0f); // Negative for clockwise
+  double radians = rotation * (PI / 180.0f); // Negative for clockwise
   int rotatedX = round(localX * cos(radians) - localY * sin(radians));
   int rotatedY = round(localX * sin(radians) + localY * cos(radians));
 
@@ -273,7 +273,7 @@ std::string SpriteRenderer::GetCellString(int column, int line) {
     double rotation = transform->rotation;
     Vector3 scale = transform->scale;
 
-    double radians = -rotation * (M_PI / 180.0);
+    double radians = -rotation * (PI / 180.0);
     Vector2 pivot = this->GetPivot();
 
     int pivotX = static_cast<int>(round(pivot.x));

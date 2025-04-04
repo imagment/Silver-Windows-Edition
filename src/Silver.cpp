@@ -19,23 +19,19 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <sys/ioctl.h>
-#include <termios.h>
-#include <thread>
 #include <tuple>
 #include <typeinfo>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <windows.h>
 
 using namespace std;
 
-mutex scriptMutex;
 unordered_set<string> currentPressedKeys;
 unordered_set<string> previousPressedKeys;
 atomic<bool> keepListening(true);
 
-mutex keyMutex;
 World Workspace;
 
 const World emptyWorld;
@@ -109,7 +105,7 @@ void SetConsoleTitle(const string title) {
   cout << "\033]0;" << title << "\007";
 }
 
-void Clear() { system("clear"); }
+void Clear() { system("cls"); }
 
 bool Gotoxy(int x, int y) {
   int consoleWidth = GetConsoleSize().x, consoleHeight = GetConsoleSize().y;
@@ -255,7 +251,7 @@ void SprayCircle(SPActor object, int spawns, const Vector3 &center, float radius
 
     for (int i = 0; i < spawns; ++i) {
         // Random angle in radians (from 0 to 2π)
-        double angle = static_cast<double>(rand()) / RAND_MAX * 2 * M_PI;
+        double angle = static_cast<double>(rand()) / RAND_MAX * 2 * PI;
 
         // Random radius from the center (up to the specified radius)
         double distance = static_cast<double>(rand()) / RAND_MAX * radius;
@@ -276,7 +272,7 @@ void SprayOval(SPActor object, int spawns, const Vector3 &center, const Vector3 
     srand(static_cast<unsigned>(time(nullptr)));
 
     for (int i = 0; i < spawns; ++i) {
-        double angle = static_cast<double>(rand()) / RAND_MAX * 2 * M_PI;
+        double angle = static_cast<double>(rand()) / RAND_MAX * 2 * PI;
         double distanceX = (static_cast<double>(rand()) / RAND_MAX) * scale.x;
         double distanceY = (static_cast<double>(rand()) / RAND_MAX) * scale.y;
 
@@ -452,19 +448,18 @@ void loadChunk(const string file) {
 */
 
 Vector2 GetConsoleSize() {
-  struct winsize w;
-  ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
-  int width = w.ws_col;
-  int height = w.ws_row;
+  CONSOLE_SCREEN_BUFFER_INFO csbi;
+  if (!GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi)) {
+      return Vector2(80, 25);  // Default fallback size
+  }
+  int width = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+  int height = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
   return Vector2(width, height);
 }
 
 Vector2 GetConsoleCenter() {
-  struct winsize w;
-  ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
-  int width = w.ws_col;
-  int height = w.ws_row;
-  return Vector2(width - width / 2, height - height / 2);
+  Vector2 size = GetConsoleSize();
+  return Vector2(size.x / 2, size.y / 2);
 }
 
 void Transform::Translate(Vector3 offset) { position += offset; }
@@ -547,7 +542,7 @@ void Hold() {
 }
 
 void Wait(int time) {
-  this_thread::sleep_for(chrono::milliseconds(static_cast<int>(time)));
+  Sleep(time);
 }
 
 int GetRandom(int min, int max) {
@@ -557,37 +552,32 @@ int GetRandom(int min, int max) {
   return dist(rng);
 }
 
-
 void setRawMode(bool value) {
-  struct termios termiosConfig;
-
-  // Retrieve the current terminal attributes
-  tcgetattr(STDIN_FILENO, &termiosConfig);
+  HANDLE hInput = GetStdHandle(STD_INPUT_HANDLE);
+  DWORD mode;
+  GetConsoleMode(hInput, &mode);
 
   if (value) {
-    // Modify the terminal attributes for raw mode
-    termiosConfig.c_lflag &=
-        ~(ICANON | ECHO); // Disable canonical mode and echo
+      mode &= ~(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT);
   } else {
-    // Restore the default behavior
-    termiosConfig.c_lflag |= (ICANON | ECHO); // Enable canonical mode and echo
+      mode |= (ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT);
   }
 
-  // Apply the updated terminal attributes
-  tcsetattr(STDIN_FILENO, TCSAFLUSH, &termiosConfig);
+  SetConsoleMode(hInput, mode);
 }
 
 void setNonBlockingMode(bool value) {
-  // Get the current file descriptor flags
-  int oldFlags = fcntl(STDIN_FILENO, F_GETFL, 0);
+  HANDLE hInput = GetStdHandle(STD_INPUT_HANDLE);
+  DWORD mode;
+  GetConsoleMode(hInput, &mode);
 
   if (value) {
-    // Set the non-blocking flag
-    fcntl(STDIN_FILENO, F_SETFL, oldFlags | O_NONBLOCK);
+      mode &= ~ENABLE_LINE_INPUT;  // Disable line buffering
   } else {
-    // Remove the non-blocking flag
-    fcntl(STDIN_FILENO, F_SETFL, oldFlags & ~O_NONBLOCK);
+      mode |= ENABLE_LINE_INPUT;   // Restore line buffering
   }
+
+  SetConsoleMode(hInput, mode);
 }
 
 vector<Vector3> getOvalPoints(Vector3 center, Vector3 scale) {
@@ -748,9 +738,12 @@ void ApplyFunction(const std::vector<int> &ids, std::function<void(int)> func,
 }
 
 
+
 vector<std::shared_ptr<Actor>> FindObjectsWithTag(const string tag) {
   vector<std::shared_ptr<Actor>> actors;
-  for(auto [key, entry] : Workspace) {
+  for (auto it = Workspace.begin(); it != Workspace.end(); ++it) {
+    auto& key = it->first;
+    auto& entry = it->second;
     if(entry->tag == tag) actors.push_back(entry);
   }
 
@@ -758,41 +751,11 @@ vector<std::shared_ptr<Actor>> FindObjectsWithTag(const string tag) {
 }
 
 std::shared_ptr<Actor> FindObjectWithTag(const string tag) {
-  for(auto [key, entry] : Workspace) {
+  for (auto it = Workspace.begin(); it != Workspace.end(); ++it) {
+    auto& key = it->first;
+    auto& entry = it->second;
     if(entry->tag == tag) return entry;
   }
 
   return nullptr;
-}
-
-void SetNonBlockingMode() {
-  const char *devicePath = "/dev/input/event0";
-  int fd = open(devicePath, O_RDONLY | O_NONBLOCK); // Open in non-blocking mode
-
-  if (fd < 0) { // Check if the file descriptor is valid
-    perror("Failed to open input device");
-    exit(EXIT_FAILURE); // Exit if the device cannot be opened
-  }
-}
-
-vector<int> Duplicate(const variant<int, vector<int>> &IDs) {
-  vector<int> duplicatedIDs;
-
-  if (holds_alternative<int>(IDs)) {
-    int id = get<int>(IDs);
-
-    nextObjectID++;
-    Workspace[nextObjectID - 1] = Workspace[id];
-    duplicatedIDs.push_back(nextObjectID - 1);
-
-  } else if (holds_alternative<vector<int>>(IDs)) {
-
-    for (int id : get<vector<int>>(IDs)) {
-      nextObjectID++;
-      Workspace[nextObjectID - 1] = Workspace[id];
-      duplicatedIDs.push_back(nextObjectID - 1);
-    }
-  }
-
-  return duplicatedIDs;
 }

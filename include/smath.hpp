@@ -8,6 +8,8 @@ constexpr double EPSILON = 1e-6;
 constexpr double DEG2RAD = PI / 180.0;
 constexpr double RAD2DEG = 180.0 / PI;
 
+double clamp(double value, double min, double max);
+
 class Vector3 {
 public:
     double x, y, z;
