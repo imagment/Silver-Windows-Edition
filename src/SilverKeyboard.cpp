@@ -11,6 +11,7 @@ void InitializeKeyboardModule() {
             keyUpStates[i] = false;
         }
         isInitialized = true;
+        setNonBlockingMode(true);
     }
 }
 
