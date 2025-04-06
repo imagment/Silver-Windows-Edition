@@ -10,7 +10,6 @@
 #include "SilverVMouse.hpp"
 #include "smath.hpp"
 
-
 // Standard library headers
 #include <algorithm>
 #include <atomic>
@@ -26,7 +25,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
-#include  <type_traits>
+#include <type_traits>
 #include <unordered_map>
 
 #define SPActor std::shared_ptr<Actor>
@@ -102,7 +101,7 @@ public:
     setShape(newShape);
     cleanShape = newShape;
 
-    useRelativePivot = false;
+    useRelativePivot = true;
     pivotFactor = Vector2(0.5f, 0.5f);  // Default pivot factor
   }
 
@@ -138,7 +137,7 @@ public:
   std::string getShape();
   void setShape(std::string target);
   void alignShapeTo(double align);
-  bool useRelativePivot = false;
+  bool useRelativePivot = true;
   Vector2 pivot = Vector2(0, 0);
   Vector2 pivotFactor = Vector2(0.5, 0.5);
   
@@ -195,12 +194,13 @@ public:
   void Update(float deltaTime) override {
     
   }
-private:
-  Vector2 RotatePoint(int column, int line); //Helper function to rotate around the pivot
-  std::string shape = "";
-  std::string cleanShape = "";
   int spriteHeight = 0;
   int spriteWidth = 0;
+private:
+  Vector2 RotatePoint(double column, double line); //Helper function to rotate around the pivot
+  std::string shape = "";
+  std::string cleanShape = "";
+  
   std::stringstream ss;
   std::vector<std::vector<std::string>> ansiExtracted;
 };
@@ -428,7 +428,7 @@ public:
   void Update(float deltaTime) {}
 };
 
-void SetNonBlockingMode();
+void setNonBlockingMode(bool value);
 std::shared_ptr<Actor> InstanceIDToActor(int objID);
 
 

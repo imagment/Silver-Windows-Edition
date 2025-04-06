@@ -220,8 +220,7 @@ void Camera::RenderFrame() {
   double cosAngle = std::cos(angle);
   double sinAngle = std::sin(angle);
 
-  auto rotatePointAroundCenter = [&cosAngle, &sinAngle](Vector2 point,
-                                                        Vector2 center) {
+  auto rotatePointAroundCenter = [&cosAngle, &sinAngle](Vector2 point, Vector2 center) {
     // Translate point to origin, rotate, then translate back
     double translatedX = point.x - center.x;
     double translatedY = point.y - center.y;
@@ -229,7 +228,7 @@ void Camera::RenderFrame() {
     double rotatedX = cosAngle * translatedX - sinAngle * translatedY;
     double rotatedY = sinAngle * translatedX + cosAngle * translatedY;
 
-    return Vector2((int)(rotatedX + center.x), (int)(rotatedY + center.y));
+    return Vector2((rotatedX + center.x), (rotatedY + center.y));
   };
   
   for (const auto entry : Workspace) {
@@ -355,10 +354,10 @@ void Camera::RenderFrame() {
       printf("Pivot bounds: %d %d %d %d\n",get<0>(seek), get<1>(seek), get<2>(seek),get<3>(seek));
     #endif
      
-    Vector2 topLeft = Vector2(pos.x - get<0>(seek), pos.y - get<2>(seek));
-    Vector2 topRight = Vector2(pos.x + get<1>(seek), pos.y - get<2>(seek));
-    Vector2 bottomLeft = Vector2(pos.x - get<0>(seek), pos.y + get<3>(seek));
-    Vector2 bottomRight = Vector2(pos.x + get<1>(seek), pos.y + get<3>(seek));
+    Vector2 topLeft = Vector2(pos.x - (double)get<0>(seek), pos.y - (double)get<2>(seek));
+    Vector2 topRight = Vector2(pos.x + (double)get<1>(seek), pos.y - (double)get<2>(seek));
+    Vector2 bottomLeft = Vector2(pos.x - (double)get<0>(seek), pos.y + (double)get<3>(seek));
+    Vector2 bottomRight = Vector2(pos.x + (double)get<1>(seek), pos.y + (double)get<3>(seek));
 
     // Apply rotation to the bounding box corners
     topLeft = rotatePointAroundCenter(topLeft, position );
