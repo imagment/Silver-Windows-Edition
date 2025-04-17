@@ -23,13 +23,13 @@ To install **Silver C++**, follow these steps:
 
 2. Build with CMake
 After cloning the repository, navigate to the project folder and use CMake to build the project:
-```
-cd Silver-Cplusplus
-mkdir build
-cd build
-cmake ..
-make
-```
+   ```
+   cd Silver-Cplusplus
+   mkdir build
+   cd build
+   cmake ..
+   make
+   ```
 **Important: Compatibility Information** <br>
 Silver C++ is only compatible with **Linux-based** operating systems. <br>
 Windows is *not* supported currently. We are creating another version of Silver C++ that supports Windows.
